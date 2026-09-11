@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Editors and local runtime data
+.idea/
+.vscode/
+*.log
+*.db
+*.sqlite
