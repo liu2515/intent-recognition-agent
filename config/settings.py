@@ -26,9 +26,19 @@ class IntentSettings:
     host: str = os.getenv("INTENT_AGENT_HOST", "127.0.0.1")
     port: int = int(os.getenv("INTENT_AGENT_PORT", "8096"))
     model_name: str = os.getenv("INTENT_MODEL_NAME", os.getenv("MAIN_MODEL_NAME", "qwen-plus"))
-    api_key: str = os.getenv("DASHSCOPE_API_KEY", "")
-    base_url: str = os.getenv("DASHSCOPE_BASE_URL", "").rstrip("/")
+    # 意图模型优先使用独立配置；未配置时兼容原有的百炼/远程模型配置。
+    api_key: str = os.getenv(
+        "INTENT_MODEL_API_KEY",
+        os.getenv("DASHSCOPE_API_KEY", ""),
+    )
+    base_url: str = os.getenv(
+        "INTENT_MODEL_BASE_URL",
+        os.getenv("DASHSCOPE_BASE_URL", ""),
+    ).rstrip("/")
     model_timeout_seconds: float = float(os.getenv("INTENT_MODEL_TIMEOUT", "60"))
+    knowledge_model_timeout_seconds: float = float(
+        os.getenv("INTENT_KNOWLEDGE_MODEL_TIMEOUT", "15")
+    )
     use_llm: bool = _as_bool(os.getenv("INTENT_USE_LLM"), True)
     cors_origins: tuple[str, ...] = tuple(
         item.strip()

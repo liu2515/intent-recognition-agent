@@ -8,7 +8,11 @@ from intent_recognition_agent.knowledge.rule_translator import translate_by_rule
 
 def rule_translate(state: IntentAgentState) -> IntentAgentState:
     match = KnowledgeMatch.model_validate(state["matched_template"])
-    value = translate_by_rule(match, Subject.model_validate(state["subject"]))
+    value = translate_by_rule(
+        match,
+        Subject.model_validate(state["subject"]),
+        state.get("original_input"),
+    )
     return {
         "translation_mode": "rule",
         "six_tuple": value.model_dump(mode="json"),

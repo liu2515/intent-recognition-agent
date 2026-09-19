@@ -10,6 +10,11 @@ from intent_recognition_agent.domain.knowledge_models import (
 def evaluate_coverage(match: KnowledgeMatch | None) -> KnowledgeCoverage:
     if match is None:
         return KnowledgeCoverage.MISSING
-    if match.match_type in (KnowledgeMatchType.EXACT, KnowledgeMatchType.ALIAS):
+    if match.match_type in (
+        KnowledgeMatchType.EXACT,
+        KnowledgeMatchType.ALIAS,
+        KnowledgeMatchType.PARAMETERIZED,
+        KnowledgeMatchType.SEMANTIC,
+    ):
         return KnowledgeCoverage.COMPLETE
     return KnowledgeCoverage.PARTIAL

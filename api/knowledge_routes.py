@@ -1,4 +1,4 @@
-"""知识候选写回、审核、激活和匹配接口。"""
+"""知识写回、激活、删除和匹配接口。"""
 
 from fastapi import APIRouter, HTTPException, status
 
@@ -33,13 +33,28 @@ def list_active_rules() -> dict:
 
 
 @router.get("/graph")
-def get_knowledge_graph(include_candidates: bool = True) -> dict:
-    return knowledge_graph_service.graph(include_candidates=include_candidates)
+def get_knowledge_graph(
+    include_candidates: bool = True,
+    user_id: str | None = None,
+    reconcile_deletions: bool = True,
+) -> dict:
+    return knowledge_graph_service.graph(
+        include_candidates=include_candidates,
+        user_id=user_id,
+        reconcile_deletions=reconcile_deletions,
+    )
 
 
 @router.post("/graph/sync")
 def sync_knowledge_graph() -> dict:
     return knowledge_graph_service.sync()
+
+
+@router.post("/graph/sync-deletions")
+def sync_knowledge_graph_deletions() -> dict:
+    """将 Neo4j Browser 中的人工删除同步回知识事实库。"""
+
+    return knowledge_graph_service.sync_deletions_from_neo4j()
 
 
 @router.get("/candidates")
@@ -55,17 +70,17 @@ def list_candidates(status_value: KnowledgeStatus | None = None) -> dict:
 @router.post("/candidates", status_code=status.HTTP_201_CREATED)
 def create_candidate(request: KnowledgeCandidateRequest) -> dict:
     try:
-        candidate = writeback_service.propose(
+        knowledge = writeback_service.activate_confirmed(
             utterance=request.utterance,
             six_tuple=request.six_tuple,
-            created_by=request.created_by,
+            confirmed_by=request.created_by,
             aliases=request.aliases,
             match_keywords=request.match_keywords,
             excluded_keywords=request.excluded_keywords,
         )
     except DuplicateKnowledgeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return candidate.model_dump(mode="json")
+    return knowledge.model_dump(mode="json")
 
 
 @router.post("/candidates/{template_id}/approve")
@@ -96,13 +111,33 @@ def reject_candidate(template_id: str, request: KnowledgeReviewRequest) -> dict:
     return rejected.model_dump(mode="json")
 
 
+@router.delete("/templates/{template_id}")
+def delete_knowledge_template(template_id: str) -> dict:
+    """删除知识模板，并同步移除它在 Neo4j 中的投影。"""
+
+    try:
+        deleted = writeback_service.delete(template_id)
+    except KnowledgeNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="知识模板不存在") from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"知识已删除，但 Neo4j 同步失败：{exc}",
+        ) from exc
+    return {
+        "status": "deleted",
+        "template_id": template_id,
+        "deleted_status": deleted.status.value,
+    }
+
+
 @router.post("/match")
 def match_active_rule(request: KnowledgeMatchRequest) -> dict:
     match = match_knowledge(request.text, repository.list_active())
     coverage = evaluate_coverage(match)
     result = None
     if match is not None and coverage.value == "complete":
-        result = translate_by_rule(match, request.subject).model_dump(mode="json")
+        result = translate_by_rule(match, request.subject, request.text).model_dump(mode="json")
 
     return {
         "coverage": coverage.value,

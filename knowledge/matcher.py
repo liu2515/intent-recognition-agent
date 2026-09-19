@@ -8,6 +8,7 @@ from intent_recognition_agent.domain.knowledge_models import (
     KnowledgeMatchType,
     KnowledgeTemplate,
 )
+from intent_recognition_agent.knowledge.runtime_slots import parameterize_utterance
 
 
 MOBILE_NUMBER_PATTERN = re.compile(r"(?<!\d)(1[3-9]\d)(\d{4})(\d{4})(?!\d)")
@@ -23,6 +24,12 @@ def redact_mobile_numbers(text: str) -> str:
 def normalize_utterance(text: str) -> str:
     normalized = unicodedata.normalize("NFKC", redact_mobile_numbers(text)).lower()
     return NON_WORD_PATTERN.sub("", normalized)
+
+
+def normalize_intent_pattern(text: str) -> str:
+    """把通用业务参数替换为槽位，得到可复用的表达模式。"""
+
+    return parameterize_utterance(text)
 
 
 def match_knowledge(
@@ -49,6 +56,17 @@ def match_knowledge(
                     template=template,
                     match_type=KnowledgeMatchType.ALIAS,
                     matched_expression=alias,
+                )
+
+    pattern = normalize_intent_pattern(utterance)
+    for template in active:
+        expressions = [template.canonical_utterance, *template.aliases]
+        for expression in expressions:
+            if pattern == normalize_intent_pattern(expression):
+                return KnowledgeMatch(
+                    template=template,
+                    match_type=KnowledgeMatchType.PARAMETERIZED,
+                    matched_expression=expression,
                 )
 
     keyword_matches: list[KnowledgeTemplate] = []

@@ -3,6 +3,15 @@ import { computed } from 'vue'
 
 const props = defineProps({ graph: Object, trace: { type: Array, default: () => [] } })
 const visited = computed(() => new Set(props.trace.map(item => item.node)))
+const selectedTools = computed(() => {
+  const labels = []
+  for (const event of props.trace) {
+    for (const tool of event.tool_calls || []) {
+      if (tool.label && !labels.includes(tool.label)) labels.push(tool.label)
+    }
+  }
+  return labels.slice(0, 2)
+})
 const executedStepCount = computed(() => props.trace.filter(item => item.node).length)
 
 const positions = {
@@ -195,6 +204,9 @@ function isEdgeVisited(edge) {
           <circle cx="20" cy="20" r="6" />
           <text class="kind-label" x="34" y="24">{{ node.kind }}</text>
           <text class="node-label" x="14" y="47">{{ node.label }}</text>
+          <text v-if="node.id === 'readonly_tools'" class="tool-choice" x="84" y="-10">
+            {{ selectedTools.length ? `已选：${selectedTools.join('、')}` : '可查：知识、产品、规则' }}
+          </text>
         </g>
       </svg>
     </div>
@@ -215,6 +227,7 @@ function isEdgeVisited(edge) {
 .svg-node circle { fill: #4c685b; }
 .svg-node .kind-label { fill: #6f8a7d; font: 9px Inter, sans-serif; text-transform: uppercase; }
 .svg-node .node-label { fill: #b6c9bf; font: 12px Inter, "Microsoft YaHei", sans-serif; font-weight: 700; }
+.svg-node .tool-choice { fill: #a693e5; font: 10px Inter, "Microsoft YaHei", sans-serif; text-anchor: middle; }
 .svg-node.visited rect { stroke: #55e7a1; stroke-width: 2; filter: url(#active-glow); }
 .svg-node.visited circle { fill: #55e7a1; }
 .svg-node.visited .node-label { fill: #effff7; }

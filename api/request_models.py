@@ -32,7 +32,23 @@ class KnowledgeMatchRequest(BaseModel):
 
 
 class IntentStartRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "text": "给我办理30元10GB流量包，下月生效",
+                    "user_id": "zhangsan",
+                    "subject": {
+                        "user_id": "zhangsan",
+                        "username": "张三",
+                        "role": "本人",
+                        "mobile_number": "13955546332",
+                    },
+                }
+            ]
+        },
+    )
 
     text: str = Field(min_length=1, max_length=8000)
     user_id: str = Field(min_length=1)
@@ -43,3 +59,17 @@ class IntentStartRequest(BaseModel):
 
 class IntentResumeRequest(HITLAnswer):
     user_id: str = Field(min_length=1)
+
+
+class IntentSixTupleExportRequest(BaseModel):
+    """Request a JSON-only six-tuple for a downstream component."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [{"user_id": "zhangsan", "task_id": "task-1"}],
+        },
+    )
+
+    user_id: str = Field(min_length=1)
+    task_id: str | None = None

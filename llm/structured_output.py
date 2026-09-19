@@ -8,11 +8,36 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from intent_recognition_agent.domain.translation_models import TranslationDraft
+from intent_recognition_agent.domain.translation_models import IntentPlanDraft, TranslationDraft
 
 
 class StructuredOutputError(ValueError):
     """模型返回值无法转换成意图草稿。"""
+
+
+def parse_intent_plan(value: Any) -> IntentPlanDraft:
+    """将模型返回值解析为原子任务计划。"""
+    if isinstance(value, IntentPlanDraft):
+        return value
+    if hasattr(value, "content"):
+        value = value.content
+    if isinstance(value, dict):
+        return IntentPlanDraft.model_validate(value)
+    if not isinstance(value, str):
+        raise StructuredOutputError(f"不支持的任务计划输出类型: {type(value).__name__}")
+
+    text = value.strip()
+    fenced = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
+    if fenced:
+        text = fenced.group(1)
+    else:
+        start, end = text.find("{"), text.rfind("}")
+        if start >= 0 and end > start:
+            text = text[start : end + 1]
+    try:
+        return IntentPlanDraft.model_validate(json.loads(text))
+    except (json.JSONDecodeError, ValidationError) as exc:
+        raise StructuredOutputError(f"模型没有返回合法的任务计划: {exc}") from exc
 
 
 def parse_translation_draft(value: Any) -> TranslationDraft:

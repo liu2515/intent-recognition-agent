@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import AgentBuildProcess from './components/AgentBuildProcess.vue'
 import HitlDialog from './components/HitlDialog.vue'
 import IntentGraphCanvas from './components/IntentGraphCanvas.vue'
@@ -10,74 +10,81 @@ import SixTupleTable from './components/SixTupleTable.vue'
 import StateChangeDrawer from './components/StateChangeDrawer.vue'
 import TranslationPath from './components/TranslationPath.vue'
 import {
-  approveKnowledgeCandidate,
+  deleteKnowledgeTemplate,
   getGraphDefinition,
-  getKnowledgeCandidates,
   getKnowledgeGraph,
   getKnowledgeRules,
   recognizeIntent,
-  rejectKnowledgeCandidate,
   resumeIntent,
-  syncKnowledgeGraph,
+  subscribeTrace,
 } from './api/intent'
 
 const response = ref(null)
+const liveTrace = ref([])
 const graph = ref(null)
 const busy = ref(false)
 const error = ref('')
-const activeUser = ref('')
+const activeUser = ref('zhangsan')
+const activeSubject = ref({ user_id: 'zhangsan', username: '张三', role: '本人' })
 const knowledgeRules = ref([])
-const knowledgeCandidates = ref([])
 const knowledgeGraph = ref(null)
 const knowledgeBusy = ref(false)
+let knowledgeRefreshTimer = null
+let knowledgeRefreshInFlight = false
 
 onMounted(async () => {
   try {
     graph.value = await getGraphDefinition()
     await refreshKnowledge()
+    knowledgeRefreshTimer = window.setInterval(() => {
+      void refreshKnowledge(true).catch(event => { error.value = event.message })
+    }, 3000)
   } catch (event) { error.value = event.message }
 })
 
-async function refreshKnowledge() {
-  knowledgeBusy.value = true
+onBeforeUnmount(() => {
+  if (knowledgeRefreshTimer) window.clearInterval(knowledgeRefreshTimer)
+})
+
+async function refreshKnowledge(silent = false) {
+  if (knowledgeRefreshInFlight) return
+  knowledgeRefreshInFlight = true
+  if (!silent) knowledgeBusy.value = true
+  const requestedUser = activeUser.value
   try {
-    const [rules, candidates, graphResult] = await Promise.all([
-      getKnowledgeRules(),
-      getKnowledgeCandidates(),
-      getKnowledgeGraph(true),
-    ])
+    // 先读 Neo4j 并完成删除对账，再读取活动规则，避免并发读取旧规则。
+    const graphResult = await getKnowledgeGraph(false, requestedUser, !silent)
+    const rules = await getKnowledgeRules()
+    if (requestedUser !== activeUser.value) return
     knowledgeRules.value = rules.items || []
-    knowledgeCandidates.value = candidates.items || []
     knowledgeGraph.value = graphResult
-  } finally { knowledgeBusy.value = false }
+  } finally {
+    knowledgeRefreshInFlight = false
+    if (!silent) knowledgeBusy.value = false
+  }
 }
 
-async function approveKnowledge({ templateId, reviewer }) {
+async function changeUser(subject) {
+  activeUser.value = subject.user_id
+  activeSubject.value = subject
+  response.value = null
+  liveTrace.value = []
+  error.value = ''
+  try { await refreshKnowledge() }
+  catch (event) { error.value = event.message }
+}
+
+async function removeKnowledge({ templateId }) {
   knowledgeBusy.value = true
   error.value = ''
   try {
-    await approveKnowledgeCandidate(templateId, reviewer)
-    await refreshKnowledge()
-  } catch (event) { error.value = event.message; knowledgeBusy.value = false }
-}
-
-async function rejectKnowledge({ templateId, reviewer, reason }) {
-  knowledgeBusy.value = true
-  error.value = ''
-  try {
-    await rejectKnowledgeCandidate(templateId, reviewer, reason)
-    await refreshKnowledge()
-  } catch (event) { error.value = event.message; knowledgeBusy.value = false }
-}
-
-async function syncGraph() {
-  knowledgeBusy.value = true
-  error.value = ''
-  try {
-    const result = await syncKnowledgeGraph()
-    if (result.status !== 'completed') error.value = result.error || 'Neo4j 尚未启用'
-    await refreshKnowledge()
-  } catch (event) { error.value = event.message; knowledgeBusy.value = false }
+    await deleteKnowledgeTemplate(templateId)
+  } catch (event) {
+    error.value = event.message
+  } finally {
+    try { await refreshKnowledge() }
+    catch (event) { error.value = error.value || event.message; knowledgeBusy.value = false }
+  }
 }
 
 async function recognize(payload) {
@@ -85,14 +92,23 @@ async function recognize(payload) {
   error.value = ''
   // 新请求开始时清空上一轮结果，避免网络请求期间继续显示旧六元组和旧执行路径。
   response.value = null
+  response.value = null
+  liveTrace.value = []
   activeUser.value = payload.user_id
+  activeSubject.value = payload.subject
+  const threadId = `intent-${crypto.randomUUID().replaceAll('-', '')}`
+  const traceStream = subscribeTrace(threadId, payload.user_id, {
+    onTrace: event => { liveTrace.value = [...liveTrace.value, event] },
+    onError: () => {},
+  })
   try {
-    response.value = await recognizeIntent(payload)
+    response.value = await recognizeIntent({ ...payload, thread_id: threadId })
+    liveTrace.value = response.value.trace || liveTrace.value
     // 知识图谱刷新与本次 HITL 响应无关，不能继续占用识别中的 busy 状态。
     void refreshKnowledge().catch(event => { error.value = event.message })
   }
   catch (event) { error.value = event.message; response.value = null }
-  finally { busy.value = false }
+  finally { traceStream.close(); busy.value = false }
 }
 
 async function answer(value) {
@@ -104,6 +120,8 @@ async function answer(value) {
       user_id: activeUser.value,
       answer: value,
     })
+    // 恢复 HITL 后后端会返回包含后续节点的完整轨迹；同步到画布才能继续高亮。
+    liveTrace.value = response.value.trace || liveTrace.value
     // 用户补充/确认已经返回后立即恢复交互；图谱在后台刷新即可。
     void refreshKnowledge().catch(event => { error.value = event.message })
   } catch (event) { error.value = event.message }
@@ -119,35 +137,42 @@ async function answer(value) {
       <div class="health"><i /> 意图识别服务就绪</div>
     </header>
 
-    <IntentInput :busy="busy" @submit="recognize" />
+    <IntentInput :busy="busy" @submit="recognize" @user-change="changeUser" />
     <p v-if="error" class="error-banner">{{ error }}</p>
-    <TranslationPath :result="response?.result" />
     <HitlDialog :interrupt="response?.interrupt" :busy="busy" @answer="answer" />
+    <TranslationPath :result="response?.result" />
+    <p
+      v-if="response?.result?.status === 'invalid' || response?.result?.validation_errors?.length"
+      class="error-banner"
+    >
+      识别已停止：{{ response.result.validation_errors?.join('；') || '六元组未通过业务校验，请调整描述后重试。' }}
+    </p>
+    <IntentGraphCanvas :key="response?.result?.thread_id || 'empty'" :graph="graph" :trace="liveTrace" />
 
     <div class="workspace-grid">
-      <SixTupleTable :key="response?.result?.thread_id || 'empty'" :value="response?.result?.six_tuple" />
+      <SixTupleTable
+        :key="response?.result?.thread_id || 'empty'"
+        :value="response?.result?.six_tuple"
+        :tasks="response?.result?.tasks || []"
+      />
       <div class="side-column">
         <StateChangeDrawer :result="response?.result" />
-        <AgentBuildProcess :trace="response?.trace" />
       </div>
     </div>
-    <IntentGraphCanvas :key="response?.result?.thread_id || 'empty'" :graph="graph" :trace="response?.trace" />
+    <AgentBuildProcess :trace="liveTrace" />
 
     <div class="knowledge-workspace">
       <KnowledgeAdmin
         :rules="knowledgeRules"
-        :candidates="knowledgeCandidates"
         :busy="knowledgeBusy"
-        @approve="approveKnowledge"
-        @reject="rejectKnowledge"
+        @remove="removeKnowledge"
         @refresh="refreshKnowledge"
       />
       <KnowledgeGraphCanvas
         :graph="knowledgeGraph"
-        :runtime-subject="response?.result?.six_tuple?.subject"
+        :runtime-subject="response?.result?.six_tuple?.subject || activeSubject"
         :busy="knowledgeBusy"
         @refresh="refreshKnowledge"
-        @sync="syncGraph"
       />
     </div>
   </main>

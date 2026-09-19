@@ -1,5 +1,7 @@
 """显式注册节点、边并编译意图识别 StateGraph。"""
 
+from typing import Any
+
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
@@ -35,6 +37,7 @@ def build_intent_graph(
     repository: KnowledgeRepository | None = None,
     translator: IntentTranslator | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
+    graph_store: Any | None = None,
 ):
     """构建可注入知识库、模型和Checkpointer的意图识别图。"""
 
@@ -45,7 +48,10 @@ def build_intent_graph(
 
     workflow.add_node("receive_request", receive_request)
     workflow.add_node("normalize_input", normalize_input)
-    workflow.add_node("retrieve_knowledge", create_retrieve_knowledge_node(repository))
+    workflow.add_node(
+        "retrieve_knowledge",
+        create_retrieve_knowledge_node(repository, translator),
+    )
     workflow.add_node("evaluate_knowledge", evaluate_knowledge)
     workflow.add_node("rule_translate", rule_translate)
     workflow.add_node("prepare_model_messages", prepare_model_messages)
@@ -67,7 +73,9 @@ def build_intent_graph(
     workflow.add_node("finalize_tuple", finalize_tuple)
     workflow.add_node(
         "propose_knowledge_writeback",
-        create_propose_knowledge_writeback_node(KnowledgeWritebackService(repository)),
+        create_propose_knowledge_writeback_node(
+            KnowledgeWritebackService(repository, graph_store=graph_store)
+        ),
     )
 
     workflow.add_edge(START, "receive_request")

@@ -15,6 +15,22 @@ export function recognizeIntent(payload) {
   })
 }
 
+export function subscribeTrace(threadId, userId, handlers = {}) {
+  const source = new EventSource(
+    `/api/intent-graph/traces/${encodeURIComponent(threadId)}/events?user_id=${encodeURIComponent(userId)}`,
+  )
+  source.addEventListener('trace', event => handlers.onTrace?.(JSON.parse(event.data)))
+  source.addEventListener('complete', () => {
+    handlers.onComplete?.()
+    source.close()
+  })
+  source.addEventListener('error', event => {
+    handlers.onError?.(event)
+    source.close()
+  })
+  return source
+}
+
 export function resumeIntent(threadId, payload) {
   return request(`/api/intents/${encodeURIComponent(threadId)}/resume`, {
     method: 'POST',
@@ -34,8 +50,13 @@ export function getKnowledgeCandidates() {
   return request('/api/knowledge/candidates')
 }
 
-export function getKnowledgeGraph(includeCandidates = true) {
-  return request(`/api/knowledge/graph?include_candidates=${includeCandidates}`)
+export function getKnowledgeGraph(includeCandidates = true, userId = '', reconcileDeletions = true) {
+  const query = new URLSearchParams({
+    include_candidates: String(includeCandidates),
+    reconcile_deletions: String(reconcileDeletions),
+  })
+  if (userId) query.set('user_id', userId)
+  return request(`/api/knowledge/graph?${query.toString()}`)
 }
 
 export function approveKnowledgeCandidate(templateId, reviewer) {
@@ -52,6 +73,16 @@ export function rejectKnowledgeCandidate(templateId, reviewer, reason) {
   })
 }
 
+export function deleteKnowledgeTemplate(templateId) {
+  return request(`/api/knowledge/templates/${encodeURIComponent(templateId)}`, {
+    method: 'DELETE',
+  })
+}
+
 export function syncKnowledgeGraph() {
   return request('/api/knowledge/graph/sync', { method: 'POST' })
+}
+
+export function syncKnowledgeGraphDeletions() {
+  return request('/api/knowledge/graph/sync-deletions', { method: 'POST' })
 }

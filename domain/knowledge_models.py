@@ -22,7 +22,9 @@ class KnowledgeStatus(str, Enum):
 class KnowledgeMatchType(str, Enum):
     EXACT = "exact"
     ALIAS = "alias"
+    PARAMETERIZED = "parameterized"
     KEYWORDS = "keywords"
+    SEMANTIC = "semantic"
 
 
 class KnowledgeCoverage(str, Enum):
@@ -86,3 +88,27 @@ class KnowledgeMatch(BaseModel):
     template: KnowledgeTemplate
     match_type: KnowledgeMatchType
     matched_expression: str
+
+
+class KnowledgeCoverageDecision(BaseModel):
+    """大模型对请求是否落在已有知识模板范围内的判断。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    coverage: KnowledgeCoverage
+    matched_template_id: str | None = None
+    confidence: float = Field(default=0.0, ge=0, le=1)
+    reason: str = ""
+
+
+class KnowledgeNormalization(BaseModel):
+    """检索知识模板前，由模型生成的标准化业务表达。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    normalized_text: str = Field(min_length=1)
+    action: str | None = None
+    business_object: str | None = None
+    extracted_parameters: dict[str, Any] = Field(default_factory=dict)
+    confidence: float = Field(default=0.0, ge=0, le=1)
+    reason: str = ""

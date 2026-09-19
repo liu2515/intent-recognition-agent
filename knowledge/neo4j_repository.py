@@ -79,6 +79,44 @@ class Neo4jKnowledgeGraph:
                 database_=self.database,
             )
 
+    def delete_template(self, template_id: str) -> None:
+        """删除某个知识模板投影，并清理不再被任何关系引用的知识节点。"""
+
+        self.driver.execute_query(
+            """
+            MATCH ()-[edge]->()
+            WHERE edge.template_id = $template_id
+            DELETE edge
+            """,
+            template_id=template_id,
+            database_=self.database,
+        )
+        self.driver.execute_query(
+            """
+            MATCH (node:KnowledgeEntity)
+            WHERE NOT (node)--()
+            DELETE node
+            """,
+            database_=self.database,
+        )
+
+    def template_edge_counts(self) -> dict[str, int]:
+        """返回 Neo4j 中每个知识模板当前保留的投影关系数量。"""
+
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH ()-[edge]->()
+            WHERE edge.template_id IS NOT NULL
+            RETURN edge.template_id AS template_id, count(edge) AS edge_count
+            """,
+            database_=self.database,
+        )
+        return {
+            record["template_id"]: int(record["edge_count"])
+            for record in records
+            if record.get("template_id")
+        }
+
     def upsert_runtime_intent(
         self,
         *,
@@ -248,8 +286,9 @@ class Neo4jKnowledgeGraph:
             MATCH (source:KnowledgeEntity)-[edge]->(target:KnowledgeEntity)
             {where_clause}
             RETURN source.id AS source_id, source.label AS source_label,
-                   source.kind AS source_kind, target.id AS target_id,
-                   target.label AS target_label, target.kind AS target_kind,
+                   source.kind AS source_kind, source.user_id AS source_user_id,
+                   target.id AS target_id, target.label AS target_label,
+                   target.kind AS target_kind, target.user_id AS target_user_id,
                    type(edge) AS relation, edge.template_id AS template_id,
                    edge.status AS status, properties(edge) AS properties
             ORDER BY source.label, relation, target.label
@@ -263,11 +302,13 @@ class Neo4jKnowledgeGraph:
                 "id": record["source_id"],
                 "label": record["source_label"],
                 "kind": record["source_kind"],
+                "user_id": record["source_user_id"],
             }
             nodes[record["target_id"]] = {
                 "id": record["target_id"],
                 "label": record["target_label"],
                 "kind": record["target_kind"],
+                "user_id": record["target_user_id"],
             }
             edges.append(
                 {
@@ -295,8 +336,10 @@ class Neo4jKnowledgeGraph:
             RETURN coalesce(source.id, 'intent:' + source.thread_id) AS source_id,
                    coalesce(source.label, source.subject_label) AS source_label,
                    coalesce(source.kind, 'intent_instance') AS source_kind,
+                   source.user_id AS source_user_id,
                    target.id AS target_id, target.label AS target_label,
-                   target.kind AS target_kind, type(edge) AS relation,
+                   target.kind AS target_kind, target.user_id AS target_user_id,
+                   type(edge) AS relation,
                    edge.template_id AS template_id, edge.status AS status,
                    properties(edge) AS properties
             ORDER BY source_label, relation, target_label
@@ -312,11 +355,13 @@ class Neo4jKnowledgeGraph:
                 "id": source_id,
                 "label": record["source_label"],
                 "kind": record["source_kind"],
+                "user_id": record["source_user_id"],
             }
             nodes[target_id] = {
                 "id": target_id,
                 "label": record["target_label"],
                 "kind": record["target_kind"],
+                "user_id": record["target_user_id"],
             }
             edges.append(
                 {

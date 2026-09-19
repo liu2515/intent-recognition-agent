@@ -1,4 +1,4 @@
-"""将完成且经过确认的大模型转译结果提交为知识候选。"""
+"""将完成且经过确认的大模型转译结果直接激活为知识。"""
 
 from collections.abc import Callable
 
@@ -20,17 +20,17 @@ def create_propose_knowledge_writeback_node(
             return {"knowledge_writeback_status": "skipped_not_confirmed"}
 
         try:
-            candidate = service.propose(
+            knowledge = service.activate_confirmed(
                 utterance=state["original_input"],
                 six_tuple=IntentSixTuple.model_validate(state["six_tuple"]),
-                created_by=state["user_id"],
+                confirmed_by=state["user_id"],
             )
         except DuplicateKnowledgeError:
             return {"knowledge_writeback_status": "duplicate"}
 
         return {
-            "knowledge_candidate_id": candidate.template_id,
-            "knowledge_writeback_status": "pending_review",
+            "knowledge_candidate_id": knowledge.template_id,
+            "knowledge_writeback_status": "active",
         }
 
     return propose_knowledge_writeback
