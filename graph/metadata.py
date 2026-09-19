@@ -14,7 +14,7 @@ NODE_METADATA = [
     {"id": "clarify_with_user", "label": "用户补充", "kind": "human"},
     {"id": "confirm_with_user", "label": "用户确认", "kind": "human"},
     {"id": "finalize_tuple", "label": "最终定稿", "kind": "output"},
-    {"id": "propose_knowledge_writeback", "label": "生成知识候选", "kind": "knowledge"},
+    {"id": "propose_knowledge_writeback", "label": "确认并激活知识", "kind": "knowledge"},
     {"id": "__end__", "label": "END", "kind": "end"},
 ]
 

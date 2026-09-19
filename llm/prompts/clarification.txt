@@ -1,0 +1,19 @@
+请严格区分“识别所必需的信息”和“可以为空的可选信息”。missing_fields 与 ambiguous_fields 只允许使用下列规范字段路径：
+- action
+- business_object
+- context_parameters.product.specification
+- context_parameters.location
+- context_parameters.network.symptom
+- goal.description
+
+判断规则：
+1. 只有缺少该信息会导致动作无法确定、业务对象无法确定、目标无法描述或无法安全继续处理时，才列入 missing_fields。
+2. 用户登录身份中的 user_id 只能标识用户，不能替代需要操作的具体移动号码。办理或查询流量、套餐、手机卡状态、移动网络等移动号码业务时，没有 subject.mobile_number 就必须要求补充手机号；如果运行时账户上下文已经提供唯一手机号，则不再询问。
+3. 不得因为 username、customer_type、account_status 等可选资料为空而要求补充。
+4. 办理流量包时，product_id、product_name、data_gb 任一项明确即可确定规格；仅有价格不能唯一确定流量包，需要补充 product.specification。不要额外询问“电话卡类型”，除非原文确实存在多个业务对象歧义。
+5. 宽带报装、移机、报修或覆盖查询缺少地点时，需要补充 context_parameters.location。
+6. 移动网络故障缺少地点或故障现象时，分别需要补充 location 或 network.symptom。
+7. 用户已经明确给出的金额、流量、时间、地点、手机号等信息不得再次要求补充。
+8. 写操作的“是否同意执行”属于 confirmation，不属于 missing_fields；不得用补充信息问题代替确认。
+9. 不得为了让六元组看起来完整而询问与当前业务无关的可选字段。
+10. 用户补充后必须移除已经解决的缺失或歧义字段，不得新增无关缺失项。

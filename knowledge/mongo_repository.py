@@ -141,6 +141,14 @@ class MongoKnowledgeRepository:
             raise ValueError("知识状态已发生变化，请刷新后重试")
         return self._to_model(updated)
 
+    def delete(self, template_id: str) -> KnowledgeTemplate:
+        """永久删除一个知识模板，无论它是活动规则还是候选记录。"""
+
+        deleted = self.collection.find_one_and_delete({"template_id": template_id})
+        if deleted is None:
+            raise KnowledgeNotFoundError(template_id)
+        return self._to_model(deleted)
+
     def migrate_from_json(self, legacy: KnowledgeRepository) -> int:
         """幂等迁移原 JSON 中的规则和候选。"""
 

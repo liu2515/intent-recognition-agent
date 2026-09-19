@@ -17,6 +17,8 @@ class IntentAgentState(TypedDict, total=False):
     subject: dict[str, Any]
     knowledge_hits: list[dict[str, Any]]
     matched_template: dict[str, Any] | None
+    knowledge_normalization: dict[str, Any] | None
+    knowledge_coverage_decision: dict[str, Any] | None
     knowledge_coverage: str
     translation_mode: str
     six_tuple: dict[str, Any]

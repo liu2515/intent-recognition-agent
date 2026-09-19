@@ -2,7 +2,12 @@
 
 from fastapi import APIRouter, HTTPException
 
-from intent_recognition_agent.api.request_models import IntentResumeRequest, IntentStartRequest
+from intent_recognition_agent.api.request_models import (
+    IntentResumeRequest,
+    IntentSixTupleExportRequest,
+    IntentStartRequest,
+)
+from intent_recognition_agent.domain.six_tuple import IntentSixTuple
 from intent_recognition_agent.llm.client import IntentTranslationError
 from intent_recognition_agent.persistence.intent_repository import (
     IntentOwnershipError,
@@ -54,3 +59,20 @@ def get_result(thread_id: str, user_id: str) -> dict:
         raise HTTPException(status_code=404, detail="意图任务不存在") from exc
     except IntentOwnershipError as exc:
         raise HTTPException(status_code=403, detail="无权访问其他用户的意图任务") from exc
+
+
+@router.post("/{thread_id}/six-tuple", response_model=IntentSixTuple)
+def export_six_tuple(thread_id: str, request: IntentSixTupleExportRequest) -> dict:
+    """Return JSON containing only the requested six-tuple for a downstream consumer."""
+    try:
+        return intent_service.export_six_tuple(
+            thread_id=thread_id,
+            user_id=request.user_id,
+            task_id=request.task_id,
+        )
+    except IntentTaskNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="意图任务不存在") from exc
+    except IntentOwnershipError as exc:
+        raise HTTPException(status_code=403, detail="无权访问其他用户的意图任务") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

@@ -1,4 +1,4 @@
-"""把经过确认的大模型六元组转成待审核知识。"""
+"""把经过确认的大模型六元组转成可复用知识。"""
 
 import logging
 from typing import Any
@@ -25,6 +25,17 @@ from intent_recognition_agent.knowledge.schema import six_tuple_to_triples
 logger = logging.getLogger(__name__)
 
 
+def _strip_runtime_annotations(value: str | None) -> str | None:
+    """移除被模型拼进业务字段的补充会话和工具回显。"""
+
+    if value is None:
+        return None
+    cleaned = value
+    for marker in ("\n用户补充：", "\n只读工具返回：", "\n工具返回："):
+        cleaned = cleaned.split(marker, 1)[0]
+    return redact_mobile_numbers(cleaned.strip())
+
+
 def generalize_six_tuple(six_tuple: IntentSixTuple) -> IntentSixTuple:
     """移除用户私有信息和单次运行结果，得到可复用模板。"""
 
@@ -45,6 +56,8 @@ def generalize_six_tuple(six_tuple: IntentSixTuple) -> IntentSixTuple:
     context.work_order_id = None
     context.contact = None
     context.extra = {}
+    if context.network is not None:
+        context.network.symptom = _strip_runtime_annotations(context.network.symptom)
     if context.location is not None:
         context.location.address = None
         context.location.longitude = None
@@ -72,7 +85,7 @@ def generalize_six_tuple(six_tuple: IntentSixTuple) -> IntentSixTuple:
 
 
 class KnowledgeWritebackService:
-    """提供候选生成、人工审核和知识激活操作。"""
+    """提供知识生成、确认即激活以及删除操作。"""
 
     def __init__(
         self,
@@ -120,6 +133,28 @@ class KnowledgeWritebackService:
                 logger.exception("知识已在 MongoDB 生效，但同步 Neo4j 失败")
         return approved
 
+    def activate_confirmed(
+        self,
+        *,
+        utterance: str,
+        six_tuple: IntentSixTuple,
+        confirmed_by: str,
+        aliases: list[str] | None = None,
+        match_keywords: list[str] | None = None,
+        excluded_keywords: list[str] | None = None,
+    ) -> KnowledgeTemplate:
+        """生成知识并以当前用户确认作为审核依据，立即激活。"""
+
+        candidate = self.propose(
+            utterance=utterance,
+            six_tuple=six_tuple,
+            created_by=confirmed_by,
+            aliases=aliases,
+            match_keywords=match_keywords,
+            excluded_keywords=excluded_keywords,
+        )
+        return self.approve(candidate.template_id, confirmed_by)
+
     def reject(
         self,
         template_id: str,
@@ -127,3 +162,20 @@ class KnowledgeWritebackService:
         reason: str,
     ) -> KnowledgeTemplate:
         return self.repository.reject(template_id, reviewer, reason)
+
+    def delete(self, template_id: str) -> KnowledgeTemplate:
+        """删除事实来源中的模板，并立即删除对应 Neo4j 投影。"""
+
+        deleted = self.repository.delete(template_id)
+        if self.graph_store is not None:
+            try:
+                self.graph_store.delete_template(template_id)
+            except Exception:
+                logger.exception("知识已从事实来源删除，但 Neo4j 投影删除失败")
+                # 全量重建仍以事实来源为准，可清除该模板遗留的图数据。
+                try:
+                    self.graph_store.rebuild(self.repository.list_active())
+                except Exception:
+                    logger.exception("Neo4j 知识图谱重建失败")
+                    raise
+        return deleted

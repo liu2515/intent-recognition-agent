@@ -49,6 +49,36 @@ BILLABLE_ACTIONS = {
     MobileAction.REDEEM_POINTS_ITEM,
 }
 
+# 这些业务必须明确作用在哪个移动号码上。登录 user_id 只能标识用户，
+# 不能在用户拥有多个号码时替代具体的服务号码；演示环境也不会自动猜测号码。
+MOBILE_TARGET_REQUIRED_ACTIONS = {
+    MobileAction.QUERY_MOBILE_CARD_STATUS,
+    MobileAction.QUERY_BALANCE,
+    MobileAction.CANCEL_MOBILE_NUMBER,
+    MobileAction.QUERY_DATA_BALANCE,
+    MobileAction.ACTIVATE_DATA_PACKAGE,
+    MobileAction.CANCEL_DATA_PACKAGE,
+    MobileAction.QUERY_DATA_USAGE_DETAILS,
+    MobileAction.QUERY_DATA_PACKAGE_STATUS,
+    MobileAction.CHANGE_DATA_PACKAGE,
+    MobileAction.ACTIVATE_ROAMING_DATA_PACKAGE,
+    MobileAction.HANDLE_DATA_OVERAGE,
+    MobileAction.QUERY_CURRENT_PLAN,
+    MobileAction.QUERY_PLAN_DETAILS,
+    MobileAction.CHANGE_MOBILE_PLAN,
+    MobileAction.CANCEL_PLAN_ADDON,
+    MobileAction.QUERY_PLAN_CONTRACT,
+    MobileAction.RELEASE_PLAN_CONTRACT,
+    MobileAction.QUERY_PLAN_EFFECTIVE_TIME,
+    MobileAction.HANDLE_MOBILE_SIGNAL_FAULT,
+    MobileAction.HANDLE_SLOW_INTERNET,
+    MobileAction.HANDLE_NO_INTERNET,
+    MobileAction.HANDLE_5G_NETWORK_PROBLEM,
+    MobileAction.HANDLE_CALL_PROBLEM,
+    MobileAction.HANDLE_SMS_PROBLEM,
+    MobileAction.HANDLE_FREQUENT_DISCONNECTION,
+}
+
 OBJECT_REQUIRED_ACTIONS = WRITE_ACTIONS - {
     MobileAction.SUSPEND_SERVICE,
     MobileAction.RESUME_SERVICE,
@@ -77,6 +107,10 @@ INHERITED_MISSING_ALLOWLIST = {
     "goal.description",
 }
 
+# 模型只负责提出歧义候选；非规范路径不能直接触发 HITL。
+# 这可避免模型因措辞波动，把可选字段偶发地判定成必须让用户补充的内容。
+INHERITED_AMBIGUOUS_ALLOWLIST = INHERITED_MISSING_ALLOWLIST
+
 
 def validate_six_tuple(
     value: IntentSixTuple,
@@ -93,12 +127,20 @@ def validate_six_tuple(
             if field in INHERITED_MISSING_ALLOWLIST
         )
     )
-    ambiguous = list(dict.fromkeys(inherited_ambiguous or []))
+    ambiguous = list(
+        dict.fromkeys(
+            field
+            for field in (inherited_ambiguous or [])
+            if field in INHERITED_AMBIGUOUS_ALLOWLIST
+        )
+    )
     errors: list[str] = []
     action = value.action.name
 
     if not (value.subject.user_id or value.subject.mobile_number or value.subject.broadband_account):
         missing.append("subject.identifier")
+    if action in MOBILE_TARGET_REQUIRED_ACTIONS and not value.subject.mobile_number:
+        missing.append("subject.mobile_number")
     # 销号属于不可逆业务，不能只凭登录用户身份确认；必须明确要处理的号码。
     if action == MobileAction.CANCEL_MOBILE_NUMBER and not value.subject.mobile_number:
         missing.append("subject.mobile_number")
@@ -143,7 +185,8 @@ def validate_six_tuple(
     }:
         if value.context_parameters.location is None:
             missing.append("context_parameters.location")
-        if value.context_parameters.network is None:
+        network = value.context_parameters.network
+        if network is None or not (network.symptom or "").strip():
             missing.append("context_parameters.network.symptom")
 
     required_confirmation = value.constraints.confirmation.required or action in WRITE_ACTIONS

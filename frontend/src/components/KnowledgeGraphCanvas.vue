@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 const props = defineProps({ graph: Object, busy: Boolean, runtimeSubject: Object })
-const emit = defineEmits(['refresh', 'sync'])
+const emit = defineEmits(['refresh'])
 
 const kindOrder = ['intent_instance', 'subject', 'action', 'object', 'parameter', 'constraint', 'goal']
 const kindLabels = { intent_instance: '运行实例', subject: '模板主体', subject_instance: '业务主体', action: '业务动作', object: '业务对象', parameter: '上下文参数', constraint: '业务约束', goal: '目标状态' }
@@ -49,6 +49,7 @@ const edges = computed(() => (props.graph?.edges || []).map(edge => {
 function shortLabel(value) {
   return value.length > 20 ? `${value.slice(0, 19)}…` : value
 }
+
 </script>
 
 <template>
@@ -57,7 +58,6 @@ function shortLabel(value) {
       <div><span class="eyebrow">KNOWLEDGE GRAPH</span><h3>移动业务知识图谱</h3></div>
       <div class="graph-actions">
         <span>{{ graph?.source || 'mongodb-projection' }}</span>
-        <button class="ghost-button" :disabled="busy" @click="emit('sync')">同步 Neo4j</button>
         <button class="ghost-button" :disabled="busy" @click="emit('refresh')">刷新</button>
       </div>
     </div>
@@ -92,7 +92,7 @@ function shortLabel(value) {
         </g>
       </svg>
     </div>
-    <p v-else class="empty">批准知识候选后，这里会展示动作、对象、参数、约束和目标之间的关系。</p>
+    <p v-else class="empty">用户确认并生成知识后，这里会展示动作、对象、参数、约束和目标之间的关系。</p>
   </section>
 </template>
 

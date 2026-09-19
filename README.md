@@ -21,11 +21,11 @@
   ├─ 缺失或歧义 → 用户补充 → 重新进入模型消息与工具循环
   ├─ 需要确认   → 用户确认 ─┬─ 确认 → 最终定稿
   │                         └─ 取消 → END
-  ├─ 通过       → 最终定稿 → 生成知识候选 → END
+  ├─ 通过       → 最终定稿 → 确认并激活知识 → END
   └─ 无效       → END
 ```
 
-模型生成或在部分知识基础上补全的结果会形成待审核知识候选；只有通过审核接口批准后，才会进入下一次规则匹配。ToolNode 只注册查询类工具，不允许在意图转译阶段执行办理、扣费、删除等写操作。手机号码在知识写回时会被掩码，用户和意图任务通过 `user_id + thread_id` 做所有权校验。
+模型生成或在部分知识基础上补全的结果，在用户确认或校验通过后会直接激活并参与下一次规则匹配，不再经过二次人工审核。ToolNode 只注册查询类工具，不允许在意图转译阶段执行办理、扣费、删除等写操作。手机号码在知识写回时会被掩码，用户和意图任务通过 `user_id + thread_id` 做所有权校验。
 
 ## 持久化结构
 
@@ -90,11 +90,11 @@ INTENT_NEO4J_PASSWORD=你的密码
 - `GET /api/intents/{thread_id}?user_id=...`：读取识别结果。
 - `GET /api/intent-graph/definition`：读取静态图定义。
 - `GET /api/intent-graph/traces/{thread_id}?user_id=...`：读取用户自己的运行轨迹。
-- `GET /api/knowledge/candidates`：读取待审核和已拒绝候选。
-- `POST /api/knowledge/candidates/{id}/approve`：批准并激活知识。
-- `POST /api/knowledge/candidates/{id}/reject`：拒绝知识。
+- `GET /api/knowledge/rules`：读取已确认并生效的知识。
+- `DELETE /api/knowledge/templates/{id}`：直接删除知识并同步移除 Neo4j 投影。
 - `GET /api/knowledge/graph`：获取知识可视化节点和关系。
 - `POST /api/knowledge/graph/sync`：将 MongoDB 活动规则重建到 Neo4j。
+- `POST /api/knowledge/graph/sync-deletions`：把 Neo4j Browser 中的删除同步回 MongoDB。
 
 在 Neo4j Browser 中查看一次已完成请求的实例详情：
 
@@ -121,7 +121,10 @@ RETURN run, execution, action, subject_link, person
 
 - `INTENT_USE_LLM`：是否优先调用模型，默认 `true`。
 - `INTENT_MODEL_NAME`：意图模型名称，默认复用 `MAIN_MODEL_NAME`。
+- `INTENT_MODEL_BASE_URL`：意图模型的 OpenAI 兼容接口地址；未设置时使用 `DASHSCOPE_BASE_URL`。
+- `INTENT_MODEL_API_KEY`：意图模型接口密钥；本地服务可填写任意非空值，例如 `local`。
 - `INTENT_MODEL_TIMEOUT`：模型超时秒数，默认 `60`。
+- `INTENT_KNOWLEDGE_MODEL_TIMEOUT`：仅用于知识检索未命中后的模型标准化和语义覆盖判断，默认 `15` 秒且不重试，避免“检索知识图谱”长时间阻塞。
 - `INTENT_AGENT_HOST` / `INTENT_AGENT_PORT`：独立服务地址，默认 `127.0.0.1:8096`。
 - `INTENT_PERSISTENCE_BACKEND`：正式运行使用 `mongodb`，测试可使用 `memory`。
 - `INTENT_MONGODB_URI` / `INTENT_MONGODB_DATABASE`：MongoDB 连接和数据库名。
@@ -131,8 +134,8 @@ RETURN run, execution, action, subject_link, person
 
 工作台下方新增两个区域：
 
-- **知识审核中心**：查看模型生成的候选，填写审核人，批准或填写原因后拒绝。
-- **移动业务知识图谱**：展示动作、业务对象、参数、约束和目标之间的关系；待审核关系使用虚线，已生效关系使用实线。
+- **已生效知识**：用户确认后的模型识别结果直接进入知识库，可一键删除并同步图谱。
+- **移动业务知识图谱**：展示动作、业务对象、参数、约束和目标之间的关系。
 
 批准候选后，状态从 `pending` 更新为 `active`，立即参与下一次规则匹配；启用 Neo4j 时同一次批准还会同步图节点和关系。
 

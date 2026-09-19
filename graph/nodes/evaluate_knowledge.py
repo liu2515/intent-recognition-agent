@@ -6,6 +6,9 @@ from intent_recognition_agent.knowledge.coverage import evaluate_coverage
 
 
 def evaluate_knowledge(state: IntentAgentState) -> IntentAgentState:
+    decision = state.get("knowledge_coverage_decision")
+    if decision and decision.get("coverage"):
+        return {"knowledge_coverage": decision["coverage"]}
     raw = state.get("matched_template")
     match = KnowledgeMatch.model_validate(raw) if raw else None
     return {"knowledge_coverage": evaluate_coverage(match).value}

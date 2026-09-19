@@ -172,3 +172,36 @@ class KnowledgeRepository:
             candidates[index] = rejected
             self._write(self.candidate_path, "knowledge_candidates", candidates)
         return rejected
+
+    def delete(self, template_id: str) -> KnowledgeTemplate:
+        """从活动规则或候选知识中永久删除指定模板。"""
+
+        with self._lock:
+            active = self.list_active()
+            candidates = self.list_candidates()
+            selected = next(
+                (
+                    entry
+                    for entry in [*active, *candidates]
+                    if entry.template_id == template_id
+                ),
+                None,
+            )
+            if selected is None:
+                raise KnowledgeNotFoundError(template_id)
+
+            filtered_active = [
+                entry for entry in active if entry.template_id != template_id
+            ]
+            filtered_candidates = [
+                entry for entry in candidates if entry.template_id != template_id
+            ]
+            if len(filtered_active) != len(active):
+                self._write(self.active_path, "intent_templates", filtered_active)
+            if len(filtered_candidates) != len(candidates):
+                self._write(
+                    self.candidate_path,
+                    "knowledge_candidates",
+                    filtered_candidates,
+                )
+        return selected

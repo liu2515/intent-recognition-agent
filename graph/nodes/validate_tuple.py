@@ -15,7 +15,7 @@ def validate_tuple(state: IntentAgentState) -> IntentAgentState:
         inherited_missing=state.get("missing_fields"),
         inherited_ambiguous=state.get("ambiguous_fields"),
     )
-    return {
+    update: IntentAgentState = {
         "six_tuple": value.model_dump(mode="json"),
         "missing_fields": result.missing_fields,
         "ambiguous_fields": result.ambiguous_fields,
@@ -23,3 +23,8 @@ def validate_tuple(state: IntentAgentState) -> IntentAgentState:
         "confirmation_required": result.confirmation_required,
         "confirmed": value.constraints.confirmation.confirmed,
     }
+    # 路由会在校验错误时直接结束。必须同步写入 invalid，否则保留下来的
+    # processing 会让前端误以为任务仍在执行。
+    if result.errors:
+        update["status"] = "invalid"
+    return update

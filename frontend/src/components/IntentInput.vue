@@ -2,13 +2,21 @@
 import { ref } from 'vue'
 
 defineProps({ busy: Boolean })
-const emit = defineEmits(['submit'])
+const emit = defineEmits(['submit', 'user-change'])
 const userId = ref('zhangsan')
 const text = ref('给我办理20元10GB流量包，下月生效')
 const userProfiles = {
   zhangsan: '张三',
   lisi: '李四',
   laoxiao: '老肖',
+}
+
+function notifyUserChange() {
+  emit('user-change', {
+    user_id: userId.value,
+    username: userProfiles[userId.value],
+    role: '本人',
+  })
 }
 
 function submit() {
@@ -32,7 +40,7 @@ function submit() {
         <span class="eyebrow">NATURAL LANGUAGE</span>
         <h2>用户请求</h2>
       </div>
-      <select v-model="userId" :disabled="busy" aria-label="演示用户">
+      <select v-model="userId" :disabled="busy" aria-label="演示用户" @change="notifyUserChange">
         <option value="zhangsan">张三</option>
         <option value="lisi">李四</option>
         <option value="laoxiao">老肖</option>
